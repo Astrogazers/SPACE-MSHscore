@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPACE · Dynamic Nomogram & Risk Calculator</title>
+<style>
+  :root { color-scheme: light; font: 16px/1.5 system-ui, -apple-system, sans-serif; color: #182b3c; background: #f5f7fa; }
+  * { box-sizing: border-box; }
+  body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 0 20px; }
+  h1 { margin: 0; font-size: 1.8rem; } h2 { margin: 0 0 14px; font-size: 1.15rem; }
+  p { margin: 8px 0; } .muted, small { color: #526475; } small { display: block; font-size: .82rem; }
+  .card { background: white; border: 1px solid #d8e0e8; border-radius: 12px; padding: 22px; margin: 18px 0; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  label { display: block; font-weight: 600; font-size: .95rem; } input, select, button { font: inherit; }
+  input, select { width: 100%; margin-top: 6px; padding: 9px 10px; color: inherit; background: white; border: 1px solid #9aabba; border-radius: 6px; }
+  button { padding: 9px 15px; border: 1px solid #9aabba; border-radius: 6px; color: #163b59; background: white; cursor: pointer; }
+  button:hover { background: #edf3f8; } button.primary { background: #205c87; color: white; border-color: #205c87; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+  .notice { border-left: 4px solid #c39223; padding: 10px 14px; background: #fff8e5; border-radius: 4px; }
+  .error { color: #9d2727; } .summary { display: flex; flex-wrap: wrap; gap: 24px 44px; }
+  .value { display: block; font-weight: 700; font-size: 1.8rem; color: #205c87; }
+  table { border-collapse: collapse; width: 100%; margin-top: 18px; text-align: center; }
+  caption { text-align: left; font-weight: 600; margin-bottom: 6px; } th, td { padding: 10px 6px; border-bottom: 1px solid #dfe6ec; }
+  .points { border-top: 1px solid #dfe6ec; margin-top: 20px; padding-top: 16px; }
+  footer { font-size: .84rem; padding-bottom: 20px; } [hidden] { display: none !important; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>SPACE Risk Calculator</h1>
+    <p class="muted">Locked survival models · Version <span id="version">1.0.0</span></p>
+    <p class="notice"><strong>Research use only — not a certified medical device.</strong></p>
+  </header>
+  <section class="card">
+    <h2>Model and predictors</h2>
+    <form id="calculatorForm" novalidate>
+      <div class="grid">
+        <label>Model<select id="model"><option value="SPACE">SPACE · 3-sequence primary model</option><option value="SPACE-T2">SPACE-T2 · T2FS single-sequence model</option><option value="SPACE-Auto">SPACE-Auto · automated segmentation model</option></select></label>
+        <label><span id="scoreLabel">Three-sequence MSHscore</span><input id="mshscore" type="number" step="any" required></label>
+        <label>T category<select id="t_category"><option value="T1b3-T2b">T1b3–T2b</option><option value="T3">T3</option><option value="T4">T4</option></select></label>
+        <label>Nodal status<select id="nodal_status"><option value="Negative">Negative</option><option value="Pelvic">Pelvic</option><option value="Para-aortic">Para-aortic</option></select></label>
+        <label>Maximum tumour diameter (cm)<input id="diameter_cm" type="number" step="any" min="0" required></label>
+        <label>Histology<select id="histology"><option value="Squamous">Squamous</option><option value="Nonsquamous">Nonsquamous</option></select></label>
+        <label>Haemoglobin (g/dL)<input id="hemoglobin_g_dl" type="number" step="any" min="0" required></label>
+      </div>
+      <div class="actions">
+        <button type="submit" class="primary">Calculate risk</button>
+        <span class="muted">Representative cases (Fig. 6):</span>
+        <button id="presetA" type="button">Patient A</button>
+        <button id="presetB" type="button">Patient B</button>
+        <button id="presetC" type="button">Patient C</button>
+      </div>
+    </form>
+    <p id="error" class="error" role="alert" hidden></p>
+    <p id="rangeWarning" class="notice" role="alert" hidden></p>
+  </section>
+  <section id="results" class="card" hidden>
+    <h2 id="resultsHeading">Prediction</h2>
+    <div class="summary">
+      <div>Linear predictor (η)<output id="eta" class="value"></output></div>
+      <div>3-year progression risk<output id="risk" class="value"></output></div>
+      <div>Risk group<output id="group" class="value"></output></div>
+    </div>
+    <p class="muted">3-year progression risk thresholds: Low (&lt;15%) · Intermediate (15%–&lt;30%) · High (≥30%)</p>
+    <table>
+      <caption>Predicted progression-free survival (PFS)</caption>
+      <thead><tr><th>1 year (12 mo)</th><th>2 years (24 mo)</th><th>3 years (36 mo)</th><th>5 years (60 mo)</th></tr></thead>
+      <tbody><tr>
+        <td><strong id="pfs12"></strong><small id="pfs12detail"></small></td>
+        <td><strong id="pfs24"></strong><small id="pfs24detail"></small></td>
+        <td><strong id="pfs36"></strong><small id="pfs36detail"></small></td>
+        <td><strong id="pfs60"></strong><small id="pfs60detail"></small></td>
+      </tr></tbody>
+    </table>
+    <div id="nomogram" class="points" hidden>
+      <h2>Nomogram points (Supplementary Fig. 5)</h2>
+      <div class="summary">
+        <div>MSHscore points<output id="mshPoints" class="value"></output></div>
+        <div>Clinical points<output id="clinicalPoints" class="value"></output></div>
+        <div>Total points<output id="totalPoints" class="value"></output></div>
+      </div>
+    </div>
+  </section>
+  <footer class="muted">
+    <p>Parameters: Supplementary Table 4, Supplementary Note 1, and Supplementary Fig. 5.</p>
+  </footer>
+</main>
+<script id="lockedParameters" type="application/json">{"version":"1.0.0","reference":"Supplementary Table 4, Supplementary Note 1, and Supplementary Fig. 5","msh_constants":{"radius_mm":6.0,"min_viable_volume_cm3":5.0,"training_msh3_mean":0.4107,"training_msh3_sd":0.0626,"training_msh_t2w_mean":0.5188,"training_msh_t2w_sd":0.0598},"training_predictor_means":{"T3":0.2397,"T4":0.0411,"Pelvic":0.3082,"ParaAortic":0.0708,"Diameter":5.1877,"Nonsquamous":0.0936,"Hemoglobin":12.0068,"MSHscore":0.4107,"MSHscore_T2W":0.5188},"risk_thresholds_3yr":{"low_upper":0.15,"high_lower":0.3},"models":{"SPACE":{"description":"Primary 3-sequence SPACE model (T2FS, DWI, CE-T1FS)","centering_constant":-0.227,"coefficients":{"T3":0.5972,"T4":-0.0779,"Pelvic":0.6192,"ParaAortic":0.6956,"Diameter":0.2759,"Nonsquamous":0.7503,"Hemoglobin":-0.1378,"MSH_per_SD":0.8642},"msh_mean":0.4107,"msh_sd":0.0626,"baseline_survival_S0":{"12":0.8973,"24":0.8482,"36":0.8123,"60":0.7425}},"SPACE-T2":{"description":"Single-sequence T2-weighted model (MSHscore_T2W = 1 - I_T2FS)","centering_constant":0.1345,"coefficients":{"T3":0.5368,"T4":0.0597,"Pelvic":0.5908,"ParaAortic":0.4946,"Diameter":0.2363,"Nonsquamous":0.731,"Hemoglobin":-0.148,"MSH_per_SD":0.6927},"msh_mean":0.5188,"msh_sd":0.0598,"baseline_survival_S0":{"12":0.8837,"24":0.8304,"36":0.794,"60":0.7271}},"SPACE-Auto":{"description":"Automated segmentation 3-sequence model (SPACE-Auto)","centering_constant":-0.3366,"coefficients":{"T3":0.533,"T4":-0.0789,"Pelvic":0.6689,"ParaAortic":0.7215,"Diameter":0.2735,"Nonsquamous":0.6628,"Hemoglobin":-0.1271,"MSH_per_SD":0.7262},"msh_mean":0.4107,"msh_sd":0.0626,"baseline_survival_S0":{"12":0.8921,"24":0.8417,"36":0.8054,"60":0.7346}},"Clinical":{"description":"5-variable clinical reference model","centering_constant":-0.1525,"coefficients":{"T3":0.5256,"T4":0.6421,"Pelvic":0.7167,"ParaAortic":0.5601,"Diameter":0.1959,"Nonsquamous":0.9066,"Hemoglobin":-0.1134,"MSH_per_SD":0.0},"msh_mean":0.4107,"msh_sd":0.0626,"baseline_survival_S0":{"12":0.8618,"24":0.8027,"36":0.7641,"60":0.6965}}},"display_ranges":{"diameter_cm":[3.0,9.0],"hemoglobin_g_dl":[8.0,16.0],"mshscore":[0.25,0.6]},"nomogram_display":{"msh_axis":[0.25,0.6],"msh_max_points":100.0,"t_category_points":{"T1b3-T2b":0.0,"T3":12.36,"T4":-1.61},"nodal_points":{"Negative":0.0,"Pelvic":12.81,"Para-aortic":14.4},"histology_points":{"Squamous":0.0,"Nonsquamous":15.53},"diameter_origin_cm":3.0,"diameter_points_per_cm":5.71,"hemoglobin_origin_g_dl":16.0,"hemoglobin_points_per_g_dl":2.86},"representative_patients":{"Patient_A":{"age":43,"figo_stage":"IIB (T2bN0)","t_category":"T1b3-T2b","nodal_status":"Negative","histology":"Squamous","diameter_cm":5.4,"hemoglobin_g_dl":12.2,"viable_volume_cm3":58.4,"moran_t2fs":0.503,"moran_dwi":0.702,"moran_cet1fs":0.646,"mshscore":0.383,"mshscore_t2w":0.497,"expected":{"msh_points":38.0,"diameter_points":13.7,"hemoglobin_points":10.9,"clinical_points":24.6,"total_points":62.6,"eta_space":-0.801,"risk_3yr_space_pct":8.9,"risk_group_space":"Low","pfs_1_2_3_5_pct":[95,93,91,87],"eta_space_t2":-0.648,"risk_3yr_space_t2_pct":11.4,"risk_group_space_t2":"Low"}},"Patient_B":{"age":46,"figo_stage":"IIB (T2bN0)","t_category":"T1b3-T2b","nodal_status":"Negative","histology":"Squamous","diameter_cm":4.5,"hemoglobin_g_dl":12.2,"viable_volume_cm3":26.3,"moran_t2fs":0.455,"moran_dwi":0.602,"moran_cet1fs":0.557,"mshscore":0.462,"mshscore_t2w":0.545,"expected":{"msh_points":60.6,"clinical_points":19.4,"total_points":80.0,"eta_space":0.042,"risk_3yr_space_pct":19.5,"risk_group_space":"Intermediate","pfs_1_2_3_5_pct":[89,84,81,73],"eta_space_t2":-0.304,"risk_3yr_space_t2_pct":15.6,"risk_group_space_t2":"Intermediate"}},"Patient_C":{"age":42,"figo_stage":"IIB (T2bN0)","t_category":"T1b3-T2b","nodal_status":"Negative","histology":"Squamous","diameter_cm":4.2,"hemoglobin_g_dl":11.9,"viable_volume_cm3":29.5,"moran_t2fs":0.402,"moran_dwi":0.548,"moran_cet1fs":0.46,"mshscore":0.53,"mshscore_t2w":0.598,"expected":{"msh_points":80.0,"diameter_points":6.9,"hemoglobin_points":11.7,"clinical_points":18.6,"total_points":98.6,"eta_space":0.939,"risk_3yr_space_pct":41.2,"risk_group_space":"High","pfs_1_2_3_5_pct":[76,66,59,47],"eta_space_t2":0.283,"risk_3yr_space_t2_pct":26.4,"risk_group_space_t2":"Intermediate"}}}}</script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const parameters = JSON.parse($('lockedParameters').textContent);
+  const fields = ['mshscore', 't_category', 'nodal_status', 'diameter_cm', 'histology', 'hemoglobin_g_dl'];
+  const months = [12, 24, 36, 60];
+  let activePreset = null;
+
+  const round = (v, d = 1) => Number(Math.round(Number(v + 'e' + d)) + 'e-' + d);
+
+  function predict(raw, mode = 'SPACE') {
+    const x = { ...raw };
+    for (const k of ['mshscore', 'diameter_cm', 'hemoglobin_g_dl']) {
+      x[k] = Number(x[k]);
+      if (!Number.isFinite(x[k])) throw new Error(`Please enter a valid number for ${k}.`);
+    }
+    if (x.diameter_cm <= 0 || x.hemoglobin_g_dl <= 0) throw new Error('Diameter and haemoglobin must be positive.');
+    const spec = parameters.models[mode], b = spec.coefficients;
+    const eta = spec.centering_constant
+      + b.T3 * (x.t_category === 'T3' ? 1 : 0)
+      + b.T4 * (x.t_category === 'T4' ? 1 : 0)
+      + b.Pelvic * (x.nodal_status === 'Pelvic' ? 1 : 0)
+      + b.ParaAortic * (x.nodal_status === 'Para-aortic' ? 1 : 0)
+      + b.Diameter * x.diameter_cm
+      + b.Nonsquamous * (x.histology === 'Nonsquamous' ? 1 : 0)
+      + b.Hemoglobin * x.hemoglobin_g_dl
+      + b.MSH_per_SD * ((x.mshscore - spec.msh_mean) / spec.msh_sd);
+
+    const pfs = Object.fromEntries(months.map(m => [m, Math.pow(spec.baseline_survival_S0[m], Math.exp(eta))]));
+    const risk = 1 - pfs[36];
+    const t = parameters.risk_thresholds_3yr;
+    const group = risk < t.low_upper ? 'Low' : risk < t.high_lower ? 'Intermediate' : 'High';
+
+    const ranges = parameters.display_ranges;
+    const warnings = [];
+    if (x.mshscore < ranges.mshscore[0] || x.mshscore > ranges.mshscore[1]) {
+      warnings.push('MSHscore is outside the reference axis range (0.25–0.60).');
+    }
+    let nomogram = null;
+    if (mode === 'SPACE' && !warnings.length) {
+      const n = parameters.nomogram_display;
+      const clinRaw = n.t_category_points[x.t_category] + n.nodal_points[x.nodal_status]
+        + (x.diameter_cm - n.diameter_origin_cm) * n.diameter_points_per_cm
+        + n.histology_points[x.histology]
+        + (n.hemoglobin_origin_g_dl - x.hemoglobin_g_dl) * n.hemoglobin_points_per_g_dl;
+      const mshPts = round((x.mshscore - n.msh_axis[0]) / (n.msh_axis[1] - n.msh_axis[0]) * n.msh_max_points, 1);
+      const clinPts = round(clinRaw, 1);
+      nomogram = { msh_points: mshPts, clinical_points: clinPts, total_points: round(mshPts + clinPts, 1) };
+    }
+    return { eta, risk_3yr: risk, risk_group: group, pfs, warnings, nomogram };
+  }
+
+  function calculate() {
+    $('error').hidden = true;
+    $('rangeWarning').hidden = true;
+    try {
+      const mode = $('model').value;
+      const res = predict(Object.fromEntries(fields.map(k => [k, $(k).value])), mode);
+      $('resultsHeading').textContent = `${mode} prediction`;
+      $('eta').textContent = `${res.eta >= 0 ? '+' : ''}${res.eta.toFixed(3)}`;
+      $('risk').textContent = `${(100 * res.risk_3yr).toFixed(1)}%`;
+      $('group').textContent = res.risk_group;
+      months.forEach(m => {
+        $(`pfs${m}`).textContent = `${Math.round(100 * res.pfs[m])}%`;
+        $(`pfs${m}detail`).textContent = `${(100 * res.pfs[m]).toFixed(1)}%`;
+      });
+      $('nomogram').hidden = !res.nomogram;
+      if (res.nomogram) {
+        $('mshPoints').textContent = res.nomogram.msh_points.toFixed(1);
+        $('clinicalPoints').textContent = res.nomogram.clinical_points.toFixed(1);
+        $('totalPoints').textContent = res.nomogram.total_points.toFixed(1);
+      }
+      if (res.warnings.length) {
+        $('rangeWarning').textContent = res.warnings.join(' ');
+        $('rangeWarning').hidden = false;
+      }
+      $('results').hidden = false;
+    } catch (e) {
+      $('error').textContent = e.message;
+      $('error').hidden = false;
+      $('results').hidden = true;
+    }
+  }
+
+  function loadPreset(key) {
+    const p = parameters.representative_patients[key];
+    activePreset = key;
+    fields.forEach(f => { $(f).value = String(p[f]); });
+    if ($('model').value === 'SPACE-T2') $('mshscore').value = String(p.mshscore_t2w);
+    calculate();
+  }
+
+  $('calculatorForm').addEventListener('submit', e => { e.preventDefault(); calculate(); });
+  ['A', 'B', 'C'].forEach(L => $(`preset${L}`).addEventListener('click', () => loadPreset(`Patient_${L}`)));
+  $('model').addEventListener('change', () => {
+    $('scoreLabel').textContent = $('model').value === 'SPACE-T2' ? 'Single-sequence MSHscore_T2W (1 − I_T2FS)' : 'Three-sequence MSHscore';
+    if (activePreset) loadPreset(activePreset);
+  });
+  loadPreset('Patient_A');
+})();
+</script>
+</body>
+</html>
