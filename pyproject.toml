@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "space-mshscore"
+version = "1.0.0"
+description = "Three-dimensional MRI spatial heterogeneity (MSHscore) and locked survival models for the SPACE study"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["numpy>=1.23", "scipy>=1.9", "nibabel>=5.0", "matplotlib>=3.6"]
+
+[tool.setuptools]
+packages = ["space_msh"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+space_msh = ["data/*.json"]
