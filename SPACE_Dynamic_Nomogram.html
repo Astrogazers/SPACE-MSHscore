@@ -95,16 +95,27 @@
   const parameters = JSON.parse($('lockedParameters').textContent);
   const fields = ['mshscore', 't_category', 'nodal_status', 'diameter_cm', 'histology', 'hemoglobin_g_dl'];
   const months = [12, 24, 36, 60];
+  const numericFields = ['mshscore', 'diameter_cm', 'hemoglobin_g_dl'];
+  const scoreLabelFor = mode => mode === 'SPACE-T2' ? 'Single-sequence MSHscore_T2W (1 − I_T2FS)'
+    : mode === 'SPACE-Auto' ? 'Three-sequence MSHscore (automated segmentation)' : 'Three-sequence MSHscore';
+  const fieldLabel = (k, mode) => k === 'mshscore' ? scoreLabelFor(mode)
+    : k === 'diameter_cm' ? 'maximum tumour diameter (cm)' : 'haemoglobin (g/dL)';
   let activePreset = null;
 
   const round = (v, d = 1) => Number(Math.round(Number(v + 'e' + d)) + 'e-' + d);
 
   function predict(raw, mode = 'SPACE') {
     const x = { ...raw };
-    for (const k of ['mshscore', 'diameter_cm', 'hemoglobin_g_dl']) {
-      x[k] = Number(x[k]);
-      if (!Number.isFinite(x[k])) throw new Error(`Please enter a valid number for ${k}.`);
+    const missing = [], invalid = [];
+    for (const k of numericFields) {
+      // Reject empty / whitespace-only values BEFORE numeric conversion (Number('') === 0).
+      const v = x[k] === undefined || x[k] === null ? '' : String(x[k]).trim();
+      if (v === '') { missing.push(fieldLabel(k, mode)); continue; }
+      x[k] = Number(v);
+      if (!Number.isFinite(x[k])) invalid.push(fieldLabel(k, mode));
     }
+    if (missing.length) throw new Error(`Incomplete input: please enter ${missing.join(', ')}. No risk is shown until all fields are complete.`);
+    if (invalid.length) throw new Error(`Invalid input: please enter a valid number for ${invalid.join(', ')}. No risk is shown until all fields are valid.`);
     if (x.diameter_cm <= 0 || x.hemoglobin_g_dl <= 0) throw new Error('Diameter and haemoglobin must be positive.');
     const spec = parameters.models[mode], b = spec.coefficients;
     const eta = spec.centering_constant
@@ -141,9 +152,17 @@
     return { eta, risk_3yr: risk, risk_group: group, pfs, warnings, nomogram };
   }
 
+  function showPrompt(message) {
+    $('results').hidden = true;
+    $('rangeWarning').hidden = true;
+    $('error').textContent = message;
+    $('error').hidden = false;
+  }
+
   function calculate() {
     $('error').hidden = true;
     $('rangeWarning').hidden = true;
+    $('results').hidden = true;
     try {
       const mode = $('model').value;
       const res = predict(Object.fromEntries(fields.map(k => [k, $(k).value])), mode);
@@ -174,6 +193,7 @@
   }
 
   function loadPreset(key) {
+    // Explicit preset selection always loads the full representative case.
     const p = parameters.representative_patients[key];
     activePreset = key;
     fields.forEach(f => { $(f).value = String(p[f]); });
@@ -181,11 +201,21 @@
     calculate();
   }
 
+  // Any manual edit means the form no longer represents a preset; stale results are hidden.
+  fields.forEach(f => ['input', 'change'].forEach(ev => $(f).addEventListener(ev, () => {
+    activePreset = null;
+    if (!$('results').hidden) showPrompt('Inputs changed — click “Calculate risk” to update the prediction.');
+  })));
+
   $('calculatorForm').addEventListener('submit', e => { e.preventDefault(); calculate(); });
   ['A', 'B', 'C'].forEach(L => $(`preset${L}`).addEventListener('click', () => loadPreset(`Patient_${L}`)));
   $('model').addEventListener('change', () => {
-    $('scoreLabel').textContent = $('model').value === 'SPACE-T2' ? 'Single-sequence MSHscore_T2W (1 − I_T2FS)' : 'Three-sequence MSHscore';
-    if (activePreset) loadPreset(activePreset);
+    const mode = $('model').value;
+    $('scoreLabel').textContent = scoreLabelFor(mode);
+    if (activePreset) { loadPreset(activePreset); return; }
+    // Manual inputs: keep clinical variables; the MSHscore is model-specific and must be re-entered.
+    $('mshscore').value = '';
+    showPrompt(`Model changed to ${mode}: please enter the ${scoreLabelFor(mode)} for this model. Clinical variables have been kept.`);
   });
   loadPreset('Patient_A');
 })();
